@@ -1,0 +1,86 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        go-version: ['1.21', '1.22', '1.23']
+
+    steps:
+    - name: Check out code
+      uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: ${{ matrix.go-version }}
+
+    - name: Cache Go modules
+      uses: actions/cache@v3
+      with:
+        path: ~/go/pkg/mod
+        key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+        restore-keys: |
+          ${{ runner.os }}-go-
+
+    - name: Download dependencies
+      run: make deps
+
+    - name: Run linting
+      uses: golangci/golangci-lint-action@v3
+      with:
+        version: latest
+
+    - name: Run tests
+      run: make test
+
+    - name: Run coverage
+      run: make test-coverage
+
+    - name: Upload coverage to Codecov
+      uses: codecov/codecov-action@v3
+      with:
+        file: ./coverage.out
+        flags: unittests
+        name: codecov-umbrella
+
+    - name: Test build
+      run: make build
+
+    - name: Test CNI commands
+      run: |
+        make test-version
+        make test-add
+        make test-del
+        make test-check
+
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    needs: test
+
+    steps:
+    - name: Check out code
+      uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: '1.23'
+
+    - name: Build for multiple platforms
+      run: make cross-compile
+
+    - name: Upload build artifacts
+      uses: actions/upload-artifact@v3
+      with:
+        name: cni-basic-binaries
+        path: bin/cni-basic-*
